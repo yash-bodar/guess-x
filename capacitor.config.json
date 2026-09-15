@@ -1,0 +1,21 @@
+{
+  "appId": "com.company.guessx",
+  "appName": "Guess-X",
+  "webDir": "public/build",
+  "server": {
+    "url": "http://192.168.1.180/guess-x/public",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "backgroundColor": "#030712"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "body",
+      "style": "DARK",
+      "resizeOnFullScreen": true
+    }
+  }
+}

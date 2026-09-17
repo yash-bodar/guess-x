@@ -29,6 +29,15 @@ export function useWordGame(initialMode = 5) {
     // Ref to native hidden input element
     const inputRef = ref(null);
 
+    // YB - 17-09-2026 Daily Challenge state
+    const isDailyMode = ref(false);
+    const dailyStatus = ref(null);
+    const dailyStreak = ref(0);
+    const dailyMaxStreak = ref(0);
+    const dailyDate = ref(null);
+    const dailyCountdown = ref('');
+    const countdownInterval = ref(null);
+
     // Statistics state
     const stats = ref({
         played: 0,
@@ -58,10 +67,12 @@ export function useWordGame(initialMode = 5) {
             stats.value = {
                 played: authUser.games_played || 0,
                 won: authUser.games_won || 0,
-                lost: authUser.games_lost || 0,
+                lost: (authUser.games_played || 0) - (authUser.games_won || 0),
                 currentStreak: authUser.current_streak || 0,
                 maxStreak: authUser.max_streak || 0,
             };
+            dailyStreak.value = authUser.daily_streak || 0;
+            dailyMaxStreak.value = authUser.daily_max_streak || 0;
             return;
         }
 
@@ -86,6 +97,57 @@ export function useWordGame(initialMode = 5) {
                 currentStreak: 0,
                 maxStreak: 0,
             };
+        }
+    };
+
+    // YB - 17-09-2026 Start countdown timer until midnight UTC reset
+    const startCountdownTimer = (initialSeconds) => {
+        if (countdownInterval.value) clearInterval(countdownInterval.value);
+        let remaining = Math.max(0, initialSeconds);
+
+        const updateStr = () => {
+            const h = Math.floor(remaining / 3600);
+            const m = Math.floor((remaining % 3600) / 60);
+            const s = remaining % 60;
+            dailyCountdown.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        };
+
+        updateStr();
+        countdownInterval.value = setInterval(() => {
+            remaining--;
+            if (remaining <= 0) {
+                remaining = 0;
+                clearInterval(countdownInterval.value);
+                fetchDailyStatus();
+            }
+            updateStr();
+        }, 1000);
+    };
+
+    // YB - 17-09-2026 Query status of today's Daily Challenge from server
+    const fetchDailyStatus = async () => {
+        try {
+            const response = await fetch(getApiUrl('/api/game/daily/status'), {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            const res = await response.json();
+            if (res.success && res.data) {
+                dailyStatus.value = res.data;
+                if (res.data.daily_streak !== undefined) {
+                    dailyStreak.value = res.data.daily_streak;
+                }
+                if (res.data.daily_max_streak !== undefined) {
+                    dailyMaxStreak.value = res.data.daily_max_streak;
+                }
+                if (res.data.seconds_until_next) {
+                    startCountdownTimer(res.data.seconds_until_next);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to fetch daily challenge status', e);
         }
     };
 
@@ -116,6 +178,9 @@ export function useWordGame(initialMode = 5) {
             stats.value.currentStreak = 0;
         }
         saveStats();
+        if (isDailyMode.value) {
+            fetchDailyStatus();
+        }
         try {
             localStorage.removeItem(STORAGE_KEY_ACTIVE_GAME);
         } catch (e) {
@@ -204,6 +269,7 @@ export function useWordGame(initialMode = 5) {
 
     // Start or restart a game session
     const startNewGame = async (mode = wordLength.value) => {
+        isDailyMode.value = false;
         wordLength.value = mode;
         guesses.value = [];
         currentGuess.value = '';
@@ -247,6 +313,83 @@ export function useWordGame(initialMode = 5) {
             focusInput();
         } catch (err) {
             triggerError(err.message || 'Network error starting game');
+        } finally {
+            loading.value = false;
+        }
+    };
+
+    // YB - 17-09-2026 Start or resume synchronized Daily Challenge
+    const startDailyGame = async () => {
+        const authUser = page.props?.auth?.user;
+        if (!authUser) {
+            return false;
+        }
+
+        isDailyMode.value = true;
+        wordLength.value = 5;
+        guesses.value = [];
+        currentGuess.value = '';
+        gameStatus.value = 'not_started';
+        xFactor.value = null;
+        secretWord.value = null;
+        errorMessage.value = '';
+        loading.value = true;
+        isRevealing.value = false;
+
+        try {
+            const response = await fetch(getApiUrl('/api/game/daily/start'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success || !data.data) {
+                throw new Error(data.message || 'Failed to start daily challenge');
+            }
+
+            const game = data.data;
+            gameId.value = game.id;
+            wordLength.value = game.word_length;
+            xFactor.value = game.x_factor;
+            gameStatus.value = game.status;
+            secretWord.value = game.secret_word;
+            dailyDate.value = game.daily_date || data.meta?.daily_date;
+
+            if (data.meta) {
+                dailyStreak.value = data.meta.daily_streak ?? 0;
+                dailyMaxStreak.value = data.meta.daily_max_streak ?? 0;
+                if (data.meta.seconds_until_next) {
+                    startCountdownTimer(data.meta.seconds_until_next);
+                }
+            }
+
+            if (Array.isArray(game.guesses)) {
+                guesses.value = game.guesses.map((g) => ({
+                    guess: g.guess,
+                    result: g.result,
+                    guessNumber: g.guess_number,
+                }));
+            }
+
+            try {
+                localStorage.setItem(STORAGE_KEY_ACTIVE_GAME, game.id);
+            } catch (e) {
+                // Ignore storage issues
+            }
+
+            if (game.status === 'playing') {
+                focusInput();
+            }
+
+            return true;
+        } catch (err) {
+            triggerError(err.message || 'Network error starting daily challenge');
+            return false;
         } finally {
             loading.value = false;
         }
@@ -469,11 +612,15 @@ export function useWordGame(initialMode = 5) {
     onMounted(() => {
         loadStats();
         window.addEventListener('keydown', handleKeydown);
+        fetchDailyStatus();
         resumeOrStartGame();
     });
 
     onUnmounted(() => {
         window.removeEventListener('keydown', handleKeydown);
+        if (countdownInterval.value) {
+            clearInterval(countdownInterval.value);
+        }
     });
 
     return {
@@ -497,7 +644,15 @@ export function useWordGame(initialMode = 5) {
         showHelpModal,
         inputRef,
         keyStatuses,
+        isDailyMode,
+        dailyStatus,
+        dailyStreak,
+        dailyMaxStreak,
+        dailyDate,
+        dailyCountdown,
         startNewGame,
+        startDailyGame,
+        fetchDailyStatus,
         submitGuess,
         handleNativeInput,
         handleVirtualKey,

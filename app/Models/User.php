@@ -28,6 +28,9 @@ class User extends Authenticatable
         'games_won',
         'current_streak',
         'max_streak',
+        'daily_streak',
+        'daily_max_streak',
+        'last_daily_date',
     ];
 
     /**
@@ -75,6 +78,9 @@ class User extends Authenticatable
             'games_won' => 'integer',
             'current_streak' => 'integer',
             'max_streak' => 'integer',
+            'daily_streak' => 'integer',
+            'daily_max_streak' => 'integer',
+            'last_daily_date' => 'date',
         ];
     }
 
@@ -107,6 +113,34 @@ class User extends Authenticatable
             $this->current_streak = 0;
         }
 
+        $this->save();
+    }
+
+    /**
+     * Update user daily challenge statistics upon daily game completion.
+     *
+     * // YB - 17-09-2026 Record daily challenge result, maintaining daily streaks across calendar days
+     */
+    public function recordDailyGameResult(bool $isWin, string $challengeDate): void
+    {
+        $challengeDateObj = \Carbon\Carbon::parse($challengeDate)->startOfDay();
+
+        if ($isWin) {
+            $yesterday = $challengeDateObj->copy()->subDay()->toDateString();
+            if ($this->last_daily_date && \Carbon\Carbon::parse($this->last_daily_date)->toDateString() === $yesterday) {
+                $this->daily_streak += 1;
+            } else {
+                $this->daily_streak = 1;
+            }
+
+            if ($this->daily_streak > $this->daily_max_streak) {
+                $this->daily_max_streak = $this->daily_streak;
+            }
+        } else {
+            $this->daily_streak = 0;
+        }
+
+        $this->last_daily_date = $challengeDateObj->toDateString();
         $this->save();
     }
 }

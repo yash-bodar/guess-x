@@ -28,6 +28,8 @@ class GameResource extends JsonResource
                 'letter' => $this->x_factor_letter,
             ],
             'status' => $this->status,
+            'is_daily' => (bool) $this->is_daily,
+            'daily_date' => $this->daily_date ? $this->daily_date->toDateString() : null,
             'guesses' => GameGuessResource::collection($this->whenLoaded('guesses', $this->guesses, [])),
             'guesses_remaining' => $guessesRemaining,
             'secret_word' => $this->isFinished() ? $this->word?->word : null,

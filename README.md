@@ -74,9 +74,17 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 
 ### Step 4: Run Migrations & Dictionary Seeding
 ```bash
-php artisan migrate:fresh --seed
+# 1. Run database migrations
+php artisan migrate:fresh
+
+# 2. Download and import comprehensive English dictionary (86,199 valid 5, 6, and 7-letter words)
+php artisan words:import --download
+
+# 3. Seed curated common target words (1,611 secret words)
+php artisan db:seed --class=WordSeeder
 ```
-*(This seeds 87,810 dictionary words with 1,611 common target words)*
+> **Note:** `words:import --download` fetches the verified English dictionary from [dwyl/english-words](https://github.com/dwyl/english-words) (`words_alpha.txt`) and imports all 5, 6, and 7-letter words with `is_valid = 1`. You can also import a local word list using `php artisan words:import path/to/words.txt`. `WordSeeder` then flags the 1,611 common vocabulary words with `is_targetable = 1` for game answers.
+
 
 ### Step 5: Start Local Development Servers
 ```bash
@@ -154,8 +162,9 @@ npm ci
 # 2. Build production assets
 npm run build
 
-# 3. Database migrations and seeding
+# 3. Database migrations, dictionary import, and seeding
 php artisan migrate --force
+php artisan words:import --download
 php artisan db:seed --class=WordSeeder --force
 
 # 4. Cache configurations and routes

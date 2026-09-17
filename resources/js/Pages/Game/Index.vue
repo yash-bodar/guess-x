@@ -12,12 +12,35 @@
 
         <!-- Main Content Area -->
         <main class="flex-1 flex flex-col items-center justify-between px-3 sm:px-4 py-3 sm:py-4 max-w-lg mx-auto w-full gap-3 sm:gap-4">
-            <!-- Mode Selector Tabs (5, 6, 7 letter) -->
+            <!-- Mode Selector Tabs (5, 6, 7 letter & Daily) -->
             <ModeSelector
                 :current-mode="wordLength"
+                :is-daily="isDailyMode"
+                :daily-streak="dailyStreak"
                 :disabled="loading || isRevealing"
                 @change-mode="(mode) => startNewGame(mode)"
+                @select-daily="handleSelectDaily"
             />
+
+            <!-- YB - 17-09-2026 Daily Challenge Cockpit Banner -->
+            <div
+                v-if="isDailyMode"
+                class="w-full max-w-sm flex items-center justify-between px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-950/80 via-indigo-950/80 to-slate-900/90 border border-purple-500/40 shadow-lg shadow-purple-950/40 text-xs animate-pop"
+            >
+                <div class="flex items-center gap-1.5 font-bold text-purple-300">
+                    <span class="text-sm">📅</span>
+                    <span class="uppercase tracking-wider text-[11px] font-black">Daily Challenge</span>
+                    <span v-if="dailyDate" class="text-slate-400 font-mono text-[10px]">({{ dailyDate }})</span>
+                </div>
+                <div class="flex items-center gap-2 font-mono text-[11px]">
+                    <span v-if="dailyStreak > 0" class="text-amber-400 font-bold flex items-center gap-0.5">
+                        🔥 {{ dailyStreak }}
+                    </span>
+                    <span v-if="dailyCountdown" class="text-slate-300 flex items-center gap-1 font-bold">
+                        ⏳ {{ dailyCountdown }}
+                    </span>
+                </div>
+            </div>
 
             <!-- X-Factor Clue Card -->
             <XFactor
@@ -73,10 +96,10 @@
                     <button
                         v-else-if="isGameOver"
                         type="button"
-                        @click="() => startNewGame()"
+                        @click="() => isDailyMode ? startNewGame(5) : startNewGame()"
                         class="py-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                     >
-                        New Game
+                        {{ isDailyMode ? 'Play Standard Game' : 'New Game' }}
                     </button>
                 </div>
             </div>
@@ -89,7 +112,12 @@
             :guesses-count="guesses.length"
             :max-guesses="maxGuesses"
             :word-length="wordLength"
-            @new-game="() => startNewGame()"
+            :guesses="guesses"
+            :is-daily="isDailyMode"
+            :daily-streak="dailyStreak"
+            :daily-date="dailyDate"
+            :daily-countdown="dailyCountdown"
+            @new-game="() => isDailyMode ? startNewGame(5) : startNewGame()"
             @open-stats="showStatsModal = true"
         />
 
@@ -111,6 +139,7 @@
         <AuthModal
             :is-open="showAuthModal"
             @close="showAuthModal = false"
+            @auth-success="handleAuthSuccess"
         />
 
         <!-- Change Password Modal -->
@@ -122,8 +151,9 @@
 </template>
 
 <script setup>
-// YB - 15-09-2026 Main game screen container with clean responsive structure
+// YB - 17-09-2026 Main game screen container with Daily Challenge integration
 import { ref } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import { useWordGame } from '@/composables/useWordGame';
 import GameHeader from '@/Components/GameHeader.vue';
 import ModeSelector from '@/Components/ModeSelector.vue';
@@ -146,6 +176,7 @@ const props = defineProps({
     },
 });
 
+const page = usePage();
 const showAuthModal = ref(false);
 const showChangePasswordModal = ref(false);
 
@@ -168,10 +199,33 @@ const {
     showStatsModal,
     showHelpModal,
     inputRef,
+    isDailyMode,
+    dailyStatus,
+    dailyStreak,
+    dailyMaxStreak,
+    dailyDate,
+    dailyCountdown,
     startNewGame,
+    startDailyGame,
+    fetchDailyStatus,
     submitGuess,
     handleNativeInput,
 } = useWordGame(props.initialMode);
+
+// YB - 17-09-2026 Handle Daily Challenge selection (enforces signed-in users only)
+const handleSelectDaily = async () => {
+    const user = page.props?.auth?.user;
+    if (!user) {
+        showAuthModal.value = true;
+        return;
+    }
+    await startDailyGame();
+};
+
+// YB - 17-09-2026 Refresh daily status upon successful login/registration
+const handleAuthSuccess = async () => {
+    await fetchDailyStatus();
+};
 </script>
 
 

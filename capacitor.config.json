@@ -3,7 +3,7 @@
   "appName": "Guess-X",
   "webDir": "public/build",
   "server": {
-    "url": "http://192.168.1.180/guess-x/public",
+    "url": "http://localhost/guess-x/public",
     "cleartext": true
   },
   "android": {

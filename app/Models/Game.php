@@ -26,6 +26,8 @@ class Game extends Model
         'x_factor_position',
         'x_factor_letter',
         'status',
+        'is_daily',
+        'daily_date',
         'started_at',
         'completed_at',
     ];
@@ -40,9 +42,21 @@ class Game extends Model
         'word_length' => 'integer',
         'max_guesses' => 'integer',
         'x_factor_position' => 'integer',
+        'is_daily' => 'boolean',
+        'daily_date' => 'date',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
+
+    /**
+     * Scope a query to only include daily challenge games.
+     *
+     * // YB - 17-09-2026 Scope daily challenge games
+     */
+    public function scopeDaily($query)
+    {
+        return $query->where('is_daily', true);
+    }
 
     /**
      * Get the user who played this game (if authenticated).

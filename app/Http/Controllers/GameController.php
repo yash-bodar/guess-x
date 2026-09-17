@@ -31,6 +31,89 @@ class GameController extends Controller
     }
 
     /**
+     * Start or resume today's Daily Challenge for an authenticated user.
+     *
+     * // YB - 17-09-2026 Initialize or resume synchronized daily challenge (authenticated users only)
+     */
+    public function dailyStart(\Illuminate\Http\Request $request, WordGameService $gameService): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please sign in to play the Daily Challenge.',
+            ], 401);
+        }
+
+        try {
+            $game = $gameService->startDailyGame($user);
+            $game->loadMissing(['guesses', 'word']);
+
+            $secondsUntilNext = max(0, now()->endOfDay()->diffInSeconds(now()));
+
+            return response()->json([
+                'success' => true,
+                'data' => new GameResource($game),
+                'meta' => [
+                    'is_daily' => true,
+                    'daily_date' => $game->daily_date ? $game->daily_date->toDateString() : now()->toDateString(),
+                    'daily_streak' => $user->daily_streak,
+                    'daily_max_streak' => $user->daily_max_streak,
+                    'seconds_until_next' => $secondsUntilNext,
+                ],
+            ], 200);
+        } catch (NoWordsFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Retrieve status of today's Daily Challenge for current user/guest.
+     *
+     * // YB - 17-09-2026 Check daily challenge completion state and countdown to midnight UTC
+     */
+    public function dailyStatus(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $today = now()->toDateString();
+        $secondsUntilNext = max(0, now()->endOfDay()->diffInSeconds(now()));
+
+        if (! $user) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'authenticated' => false,
+                    'message' => 'Sign in to access Daily Challenge.',
+                    'seconds_until_next' => $secondsUntilNext,
+                ],
+            ]);
+        }
+
+        $dailyGame = Game::where('user_id', $user->id)
+            ->where('is_daily', true)
+            ->whereDate('daily_date', $today)
+            ->with(['guesses', 'word'])
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'authenticated' => true,
+                'has_played_today' => (bool) $dailyGame,
+                'is_completed' => $dailyGame ? $dailyGame->isFinished() : false,
+                'game' => $dailyGame ? new GameResource($dailyGame) : null,
+                'daily_streak' => $user->daily_streak,
+                'daily_max_streak' => $user->daily_max_streak,
+                'seconds_until_next' => $secondsUntilNext,
+            ],
+        ]);
+    }
+
+    /**
      * Start a new game session.
      *
      * // YB - 15-09-2026 Initialize new game session with requested word length

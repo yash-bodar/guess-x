@@ -65,18 +65,43 @@
 
                 <button
                     type="button"
+                    @click="copyResult"
+                    class="w-full py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold text-xs uppercase tracking-wider transition-all duration-200 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                >
+                    <span v-if="copied" class="text-emerald-400 flex items-center gap-1.5 font-bold">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Copied to Clipboard!
+                    </span>
+                    <span v-else class="flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                        </svg>
+                        Share Score
+                    </span>
+                </button>
+
+                <button
+                    type="button"
                     @click="$emit('open-stats')"
                     class="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-xs uppercase tracking-wider transition-all duration-200 active:scale-95 cursor-pointer"
                 >
                     View Statistics
                 </button>
+
+                <!-- YB - 17-09-2026 Daily Challenge Next Round Countdown -->
+                <div v-if="isDaily && dailyCountdown" class="mt-2 p-2.5 rounded-xl bg-purple-950/40 border border-purple-800/40 text-[11px] text-purple-300 flex items-center justify-center gap-1.5 font-mono shadow-inner">
+                    <span>Next Daily Challenge in:</span>
+                    <span class="font-bold text-amber-400">⏳ {{ dailyCountdown }}</span>
+                </div>
             </div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 
 const props = defineProps({
     gameStatus: {
@@ -99,12 +124,86 @@ const props = defineProps({
         type: Number,
         default: 5,
     },
+    guesses: {
+        type: Array,
+        default: () => [],
+    },
+    isDaily: {
+        type: Boolean,
+        default: false,
+    },
+    dailyStreak: {
+        type: Number,
+        default: 0,
+    },
+    dailyDate: {
+        type: String,
+        default: '',
+    },
+    dailyCountdown: {
+        type: String,
+        default: '',
+    },
 });
 
 defineEmits(['new-game', 'open-stats']);
 
+const copied = ref(false);
 const isGameOver = computed(() => props.gameStatus === 'won' || props.gameStatus === 'lost');
 const isWin = computed(() => props.gameStatus === 'won');
+
+// YB - 17-09-2026 Generate Wordle-style shareable emoji grid for clipboard sharing
+const generateShareText = () => {
+    const statusEmoji = isWin.value ? '🏆' : '💔';
+    const score = isWin.value ? `${props.guessesCount}/${props.maxGuesses}` : `X/${props.maxGuesses}`;
+    let text = '';
+
+    if (props.isDaily) {
+        text = `Guess-X Daily (${props.dailyDate || 'Today'}) ${score} ${statusEmoji}\n`;
+        if (props.dailyStreak > 0) {
+            text += `🔥 Daily Streak: ${props.dailyStreak}\n`;
+        }
+        text += '\n';
+    } else {
+        text = `Guess-X (${props.wordLength} Letters) ${score} ${statusEmoji}\n\n`;
+    }
+
+    props.guesses.forEach((g) => {
+        if (Array.isArray(g.result)) {
+            const row = g.result.map((color) => {
+                if (color === 'green') return '🟩';
+                if (color === 'yellow') return '🟨';
+                return '⬛';
+            }).join('');
+            text += `${row}\n`;
+        }
+    });
+
+    return text.trim();
+};
+
+// YB - 17-09-2026 Copy formatted score grid to clipboard with native API and fallback
+const copyResult = async () => {
+    try {
+        const text = generateShareText();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+        }
+        copied.value = true;
+        setTimeout(() => {
+            copied.value = false;
+        }, 2500);
+    } catch (e) {
+        console.error('Failed to copy share text', e);
+    }
+};
 
 const winPraise = computed(() => {
     if (props.guessesCount === 1) return 'Genius!';

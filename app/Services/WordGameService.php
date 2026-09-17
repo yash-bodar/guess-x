@@ -73,6 +73,107 @@ class WordGameService
     }
 
     /**
+     * Start or resume today's synchronized Daily Challenge game session for an authenticated user.
+     *
+     * // YB - 17-09-2026 Start or resume daily challenge with deterministic word and X-factor
+     *
+     * @throws NoWordsFoundException
+     */
+    public function startDailyGame(\App\Models\User $user, ?string $date = null): Game
+    {
+        $challengeDate = $date ?? now()->toDateString();
+
+        // Check if user already has a daily game for this date
+        $existingGame = Game::where('user_id', $user->id)
+            ->where('is_daily', true)
+            ->whereDate('daily_date', $challengeDate)
+            ->with(['guesses', 'word'])
+            ->first();
+
+        if ($existingGame) {
+            return $existingGame;
+        }
+
+        // Daily Challenge uses standard 5-letter words
+        $wordLength = 5;
+        $maxGuesses = 5;
+        $dailyWord = $this->getDailyWord($challengeDate, $wordLength);
+        $xFactor = $this->getDailyXFactor($challengeDate, $wordLength, $dailyWord->word);
+
+        return DB::transaction(function () use ($user, $dailyWord, $wordLength, $maxGuesses, $xFactor, $challengeDate) {
+            $game = Game::create([
+                'user_id' => $user->id,
+                'word_id' => $dailyWord->id,
+                'word_length' => $wordLength,
+                'max_guesses' => $maxGuesses,
+                'x_factor_position' => $xFactor['position'],
+                'x_factor_letter' => $xFactor['letter'],
+                'status' => 'playing',
+                'is_daily' => true,
+                'daily_date' => $challengeDate,
+                'started_at' => now(),
+            ]);
+
+            Log::info("Daily Challenge started [Game ID: {$game->id}, User: {$user->id}, Date: {$challengeDate}, Word: {$dailyWord->word}]");
+
+            return $game;
+        });
+    }
+
+    /**
+     * Deterministically select the daily challenge word based on calendar date.
+     *
+     * // YB - 17-09-2026 Deterministic daily word selection by calendar date hash
+     *
+     * @throws NoWordsFoundException
+     */
+    public function getDailyWord(string $date, int $wordLength = 5): Word
+    {
+        $query = Word::where('length', $wordLength)
+            ->where('is_targetable', true)
+            ->where('is_valid', true)
+            ->orderBy('id');
+
+        $count = $query->count();
+
+        if ($count === 0) {
+            $query = Word::where('length', $wordLength)
+                ->where('is_valid', true)
+                ->orderBy('id');
+            $count = $query->count();
+        }
+
+        if ($count === 0) {
+            Log::error("No words found in database for daily challenge length: {$wordLength}");
+            throw new NoWordsFoundException($wordLength);
+        }
+
+        $seed = abs(crc32("guessx-daily-{$date}-{$wordLength}"));
+        $offset = $seed % $count;
+
+        return $query->skip($offset)->first();
+    }
+
+    /**
+     * Deterministically select the daily challenge X-Factor clue for the calendar date.
+     *
+     * // YB - 17-09-2026 Deterministic daily X-Factor clue calculation
+     *
+     * @return array{position: int, letter: string}
+     */
+    public function getDailyXFactor(string $date, int $wordLength, string $word): array
+    {
+        $word = strtoupper(trim($word));
+        $position = (abs(crc32("guessx-daily-xfactor-{$date}")) % $wordLength) + 1;
+        $letter = $word[$position - 1];
+
+        return [
+            'position' => $position,
+            'letter' => $letter,
+        ];
+    }
+
+    /**
      * Evaluate and process a user's guess for a game.
      *
      * // YB - 15-09-2026 Process guess submission with duplicate-aware tile evaluation and state management
@@ -127,6 +228,11 @@ class WordGameService
                 // Update registered user stats if game is linked to an account
                 if ($game->user) {
                     $game->user->recordGameResult($isWin);
+
+                    if ($game->is_daily) {
+                        $dailyDateStr = $game->daily_date ? $game->daily_date->toDateString() : now()->toDateString();
+                        $game->user->recordDailyGameResult($isWin, $dailyDateStr);
+                    }
                 }
             }
 

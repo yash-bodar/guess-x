@@ -1,4 +1,4 @@
-package com.example.wordgame;
+package com.company.guessx;
 
 import com.getcapacitor.BridgeActivity;
 

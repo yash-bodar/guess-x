@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+vendor
+android
+dist
+storage/*.key
+.env
+.env.*
+!.env.example
+*.log
+.idea
+.vscode
+guessx-release.jks
